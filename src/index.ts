@@ -1,7 +1,8 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { GarminClient } from './client';
+import { GarminClient, hasSavedSession } from './client';
 import { isSetupCommand, runSetup } from './setup-cli';
+import { resolveStartup } from './startup';
 import {
   registerActivityTools,
   registerHealthTools,
@@ -19,17 +20,14 @@ import {
 } from './tools';
 
 async function startServer(): Promise<void> {
-  const email = process.env.GARMIN_EMAIL;
-  const password = process.env.GARMIN_PASSWORD;
+  const decision = resolveStartup(process.env, hasSavedSession());
 
-  if (!email || !password) {
-    console.error(
-      'Error: GARMIN_EMAIL and GARMIN_PASSWORD environment variables are required.\n' +
-        'Set them when adding this MCP server:\n' +
-        '  claude mcp add garmin -e GARMIN_EMAIL=you@email.com -e GARMIN_PASSWORD=yourpass -- npx -y @nicolasvegam/garmin-connect-mcp',
-    );
+  if (decision.kind === 'error') {
+    console.error(decision.message);
     process.exit(1);
   }
+
+  const { email, password } = decision;
 
   const server = new McpServer({
     name: 'garmin-connect-mcp',

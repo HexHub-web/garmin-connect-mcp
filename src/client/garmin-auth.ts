@@ -62,6 +62,10 @@ type UserProfile = {
   profileId: number;
 };
 
+export function hasSavedSession(tokenDir: string = TOKEN_DIR): boolean {
+  return fs.existsSync(path.join(tokenDir, OAUTH1_TOKEN_FILE));
+}
+
 export type RequestOptions = {
   method?: string;
   body?: unknown;
@@ -69,8 +73,9 @@ export type RequestOptions = {
 };
 
 export class GarminAuth {
-  private email: string;
-  private password: string;
+  private email?: string;
+  private password?: string;
+  private tokenDir: string;
   private consumer: OAuthConsumer | null = null;
   private oauth1Token: OAuth1Token | null = null;
   private oauth2Token: OAuth2Token | null = null;
@@ -86,10 +91,16 @@ export class GarminAuth {
     return this.profile?.profileId ?? 0;
   }
 
-  constructor(email: string, password: string, promptMfa?: () => Promise<string>) {
+  constructor(
+    email?: string,
+    password?: string,
+    promptMfa?: () => Promise<string>,
+    tokenDir: string = TOKEN_DIR,
+  ) {
     this.email = email;
     this.password = password;
     this.promptMfa = promptMfa;
+    this.tokenDir = tokenDir;
     this.loadTokens();
   }
 
@@ -199,10 +210,16 @@ export class GarminAuth {
   }
 
   private async login(): Promise<void> {
+    if (!this.email || !this.password) {
+      throw new Error(
+        'Garmin session is missing or expired and GARMIN_EMAIL/GARMIN_PASSWORD are not set. Run "garmin-connect-mcp setup" in a terminal to sign in again.',
+      );
+    }
+
     console.error('Authenticating with Garmin Connect...');
 
     await this.fetchOAuthConsumer();
-    const ticket = await this.getLoginTicket();
+    const ticket = await this.getLoginTicket(this.email, this.password);
     await this.exchangeTicketForOAuth1(ticket);
     await this.exchangeOAuth1ForOAuth2();
     await this.fetchProfile();
@@ -234,7 +251,7 @@ export class GarminAuth {
     this.consumer = response.data;
   }
 
-  private async getLoginTicket(): Promise<string> {
+  private async getLoginTicket(email: string, password: string): Promise<string> {
     const jar = new CookieJar();
     const ssoClient = wrapper(axios.create({ jar, withCredentials: true }));
 
@@ -259,8 +276,8 @@ export class GarminAuth {
     if (!csrfToken) throw new Error('Failed to extract CSRF token from SSO');
 
     const loginResponse = await ssoClient.post(SSO_SIGNIN, new URLSearchParams({
-      username: this.email,
-      password: this.password,
+      username: email,
+      password,
       embed: 'true',
       _csrf: csrfToken!,
     }).toString(), {
@@ -469,9 +486,9 @@ export class GarminAuth {
 
   private loadTokens(): void {
     try {
-      const oauth1Path = path.join(TOKEN_DIR, OAUTH1_TOKEN_FILE);
-      const oauth2Path = path.join(TOKEN_DIR, OAUTH2_TOKEN_FILE);
-      const profilePath = path.join(TOKEN_DIR, PROFILE_FILE);
+      const oauth1Path = path.join(this.tokenDir, OAUTH1_TOKEN_FILE);
+      const oauth2Path = path.join(this.tokenDir, OAUTH2_TOKEN_FILE);
+      const profilePath = path.join(this.tokenDir, PROFILE_FILE);
 
       if (fs.existsSync(oauth1Path)) {
         this.oauth1Token = JSON.parse(fs.readFileSync(oauth1Path, 'utf-8'));
@@ -490,27 +507,27 @@ export class GarminAuth {
   }
 
   private saveTokens(): void {
-    if (!fs.existsSync(TOKEN_DIR)) {
-      fs.mkdirSync(TOKEN_DIR, { recursive: true, mode: 0o700 });
+    if (!fs.existsSync(this.tokenDir)) {
+      fs.mkdirSync(this.tokenDir, { recursive: true, mode: 0o700 });
     }
 
     if (this.oauth1Token) {
       fs.writeFileSync(
-        path.join(TOKEN_DIR, OAUTH1_TOKEN_FILE),
+        path.join(this.tokenDir, OAUTH1_TOKEN_FILE),
         JSON.stringify(this.oauth1Token, null, 2),
         { mode: 0o600 },
       );
     }
     if (this.oauth2Token) {
       fs.writeFileSync(
-        path.join(TOKEN_DIR, OAUTH2_TOKEN_FILE),
+        path.join(this.tokenDir, OAUTH2_TOKEN_FILE),
         JSON.stringify(this.oauth2Token, null, 2),
         { mode: 0o600 },
       );
     }
     if (this.profile) {
       fs.writeFileSync(
-        path.join(TOKEN_DIR, PROFILE_FILE),
+        path.join(this.tokenDir, PROFILE_FILE),
         JSON.stringify(this.profile, null, 2),
         { mode: 0o600 },
       );
