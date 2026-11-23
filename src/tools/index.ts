@@ -11,3 +11,5 @@ export { registerTrainingTools } from './training.tools';
 export { registerWellnessTools } from './wellness.tools';
 export { registerChallengeTools } from './challenges.tools';
 export { registerWriteTools } from './write.tools';
+export { registerAllTools } from './register-all';
+export type { RegisterAllToolsOptions } from './register-all';

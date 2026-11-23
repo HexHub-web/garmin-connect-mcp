@@ -21,6 +21,18 @@ describe('resolveStartup', () => {
     expect(decision).toMatchObject({ kind: 'start', email: undefined, password: undefined });
   });
 
+  it('is not read-only unless asked', () => {
+    expect(resolveStartup({}, true)).toMatchObject({ kind: 'start', isReadOnly: false });
+    expect(resolveStartup({ GARMIN_READ_ONLY: 'false' }, true)).toMatchObject({ isReadOnly: false });
+  });
+
+  it.each(['true', 'TRUE', '1', 'yes'])('turns on read-only mode for GARMIN_READ_ONLY=%s', (value) => {
+    expect(resolveStartup({ GARMIN_READ_ONLY: value }, true)).toMatchObject({
+      kind: 'start',
+      isReadOnly: true,
+    });
+  });
+
   it('refuses to start without credentials or a saved session and points to setup', () => {
     const decision = resolveStartup({ GARMIN_EMAIL: 'runner@example.com' }, false);
 

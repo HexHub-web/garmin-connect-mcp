@@ -3,21 +3,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { GarminClient, hasSavedSession } from './client';
 import { isSetupCommand, runSetup } from './setup-cli';
 import { resolveStartup } from './startup';
-import {
-  registerActivityTools,
-  registerHealthTools,
-  registerTrendTools,
-  registerSleepTools,
-  registerBodyTools,
-  registerPerformanceTools,
-  registerProfileTools,
-  registerRangeTools,
-  registerSnapshotTools,
-  registerTrainingTools,
-  registerWellnessTools,
-  registerChallengeTools,
-  registerWriteTools,
-} from './tools';
+import { registerAllTools } from './tools';
 
 async function startServer(): Promise<void> {
   const decision = resolveStartup(process.env, hasSavedSession());
@@ -36,19 +22,7 @@ async function startServer(): Promise<void> {
 
   const client = new GarminClient(email, password);
 
-  registerActivityTools(server, client);
-  registerHealthTools(server, client);
-  registerTrendTools(server, client);
-  registerSleepTools(server, client);
-  registerBodyTools(server, client);
-  registerPerformanceTools(server, client);
-  registerProfileTools(server, client);
-  registerRangeTools(server, client);
-  registerSnapshotTools(server, client);
-  registerTrainingTools(server, client);
-  registerWellnessTools(server, client);
-  registerChallengeTools(server, client);
-  registerWriteTools(server, client);
+  registerAllTools(server, client, { isReadOnly: decision.isReadOnly });
 
   const transport = new StdioServerTransport();
   await server.connect(transport);
