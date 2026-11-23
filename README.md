@@ -181,6 +181,24 @@ The server communicates over stdio using the [Model Context Protocol](https://mo
 
 Uses Garmin Connect credentials (email/password) via environment variables. OAuth tokens are cached in `~/.garmin-mcp/` to avoid re-authentication on each request.
 
+### Without a password in your MCP config
+
+Once `setup` (below) has saved a session in `~/.garmin-mcp/`, the server starts without `GARMIN_EMAIL` and `GARMIN_PASSWORD`, so the password does not have to sit in plain text in your MCP client's config. The setup prompt hides the password as you type it. If Garmin later forces a fresh login, tool calls fail with a message asking you to run `setup` again.
+
+```bash
+npm ci && npm run build
+node build/index.js setup
+claude mcp add garmin -s user -e GARMIN_READ_ONLY=true -- node "$PWD/build/index.js"
+```
+
+### Read-only mode
+
+Set `GARMIN_READ_ONLY=true` to leave out the 8 tools that change your Garmin account (`set_activity_name`, `create_manual_activity`, `delete_activity`, `add_weigh_in`, `set_hydration`, `set_blood_pressure`, `add_gear_to_activity`, `remove_gear_from_activity`).
+
+### `/health` for Claude Code
+
+[`health-check/`](health-check/README.md) sets up a `/health` command that shows your latest Garmin data and Xiaomi scale reading together, using this server in read-only mode plus [xiaomi-scale-mcp](https://github.com/HexHub-web/xiaomi-scale-mcp).
+
 ### MFA (Multi-Factor Authentication)
 
 If your Garmin account has MFA enabled (required for devices with ECG capabilities), you need to run the interactive setup once before using the MCP server:
