@@ -117,7 +117,7 @@ build_garmin() {
 
 build_xiaomi() {
   step "Building the Xiaomi connector (the first build takes several minutes)"
-  (cd "$XIAOMI_DIR" && cargo build --release -p xiaomi_scale_mcp)
+  (cd "$XIAOMI_DIR" && CARGO_PROFILE_RELEASE_LTO=off cargo build --release -p xiaomi_scale_mcp)
 }
 
 random_token() {
