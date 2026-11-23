@@ -123,7 +123,8 @@ Data lives in `~/health-check/data/` (mode 0700), separate from the code.
 | File | Contents |
 |---|---|
 | `meals.jsonl` | One meal per line: `id`, `eaten_at` (local ISO time), `time_estimated`, `description`, `items[]` (each with `name`, `portion`, `kcal`, `protein_g`, `carbs_g`, `fat_g`), totals, `confidence` (`low`/`medium`/`high`), `source` (`inbox`/`chat`), `source_file`, `photo_sha256`, `logged_at`, `corrections[]`. |
-| `scans.jsonl` | One snapshot per `/bioscan`: `scanned_at`, `date`, weight and body fat, kcal eaten, burned and active, resting HR and its 7-day average, sleep minutes and score, VO2 max, per-type minutes/km for runs, walks and rides, and the longest run that day. |
+| `days.jsonl` | One row per date, upserted: weight and body fat (if weighed), kcal eaten (from meals), kcal burned and active, resting HR, sleep minutes and score, steps, average stress, per-type minutes/km for runs, walks and rides, and the longest run. Each `/bioscan` fills today and backfills every day since the last scan (up to 30), so trends and habits have no gaps on days without a scan. |
+| `scans.jsonl` | One line per `/bioscan`: `scanned_at`, plus the weight and day totals shown at the time, for the "since last scan" changes. |
 | `habits.md` | Patterns Claude has seen repeatedly. Each entry has: statement, first seen, last seen, evidence count, examples. Rewritten by Claude after each scan; entries not supported for 30 days are removed. |
 | `goals.json` | The priority order above, goal weight (from the scale's target if set, otherwise asked once), and daily calorie deficit target (default 500 kcal; see §10). |
 
@@ -139,8 +140,9 @@ Imported inbox files move to `Health Inbox/Imported/YYYY-MM-DD/` only after thei
 | `save_meal` | Validates the meal, appends it, then moves the inbox file. Idempotent. |
 | `update_meal` | Applies a correction ("half portion", "no sauce"), keeping the original in `corrections[]`. |
 | `get_meals` | Meals for a date, plus computed totals (kcal, protein, carbs, fat). |
-| `get_last_scan` / `save_scan` | Read the previous snapshot; append a new one. |
-| `get_history` | Daily rows for the last N days (default 30), with computed values: 7-day average deficit, resting HR trend, average sleep, weight change over 7 and 30 days, longest run per week. |
+| `get_last_scan` / `save_scan` | Read the previous scan; append a new one. |
+| `save_days` | Upsert per-date rows (from the Garmin and Xiaomi tools); kcal eaten is filled in from the meals. |
+| `get_history` | Daily rows for the last N days (default 30), with computed values: 7-day average deficit, resting HR trend, average sleep, weight change over 7 and 30 days, longest run and average run pace per week. |
 | `get_goals` / `set_goals` | Read and change the targets. |
 | `read_habits` / `write_habits` | The habits notes. |
 
@@ -148,7 +150,20 @@ All totals, deltas and averages are computed in code.
 
 ### 7.4 Garmin connector addition
 
-New read-only tool `get_activity_log(date)`. It returns compact lines, not raw Garmin records.
+Two new read-only tools that return compact data instead of raw Garmin records (the existing tools return full records, including per-minute arrays). Both take `startDate` and an optional `endDate`, so one call covers today or every day since the last scan.
+
+`get_day_summaries(startDate, endDate)` returns one row per day, computed server-side from the daily summary and sleep:
+
+- kcal burned and active
+- resting HR and its 7-day average
+- sleep minutes and score
+- steps
+- average stress
+- Body Battery high/low
+
+Field names are confirmed against the live account; missing fields come back as null.
+
+`get_activity_log(startDate, endDate)` returns compact lines:
 
 - **Grouping:**
   - Runs: `running`, `treadmill_running`, `trail_running`, `track_running`
@@ -167,11 +182,11 @@ Steps:
 
 1. **Import meals:** `list_inbox`. For each item, read the photo, estimate items and macros from the photo plus description, then `save_meal`. Low-confidence estimates are marked "rough".
 2. **Fetch:**
-   - Garmin: daily summary, sleep, `get_activity_log(today)`, performance
+   - Garmin: `get_day_summaries` and `get_activity_log` from the day after the last scan through today (today only on the first scan), plus performance
    - Xiaomi: latest weigh-in and history
    - Journal: last scan, today's meals, 30-day history, habits, goals
 3. **Show** the layout below. Leave out lines with no data; never estimate missing values.
-4. **Save** the snapshot (`save_scan`).
+4. **Save:** `save_days` for every fetched day, then `save_scan`.
 5. **Update `habits.md`:** add or strengthen a pattern only with at least 3 supporting days; drop stale ones.
 
 ```
