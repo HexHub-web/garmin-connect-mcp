@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isSetupCommand, runSetup } from './setup-cli';
+import { createMutableOutput, isSetupCommand, runSetup } from './setup-cli';
 
 describe('setup command', () => {
   it('recognizes the documented setup argument', () => {
@@ -17,6 +17,9 @@ describe('setup command', () => {
       ask: async (question) => {
         questions.push(question);
         return '654321';
+      },
+      askSecret: async () => {
+        throw new Error('password comes from the environment in this test');
       },
       close: () => {},
       log: (message) => logs.push(message),
@@ -36,16 +39,19 @@ describe('setup command', () => {
     expect(exitCode).toBeUndefined();
   });
 
-  it('asks for email and password when they are not in the environment', async () => {
+  it('asks for the email in plain text and the password with hidden input', async () => {
     const questions: string[] = [];
+    const secretQuestions: string[] = [];
 
     await runSetup({
       env: {},
       ask: async (question) => {
         questions.push(question);
-        if (question.startsWith('Garmin email')) return 'runner@example.com';
-        if (question.startsWith('Garmin password')) return 'secret';
-        return '';
+        return question.startsWith('Garmin email') ? 'runner@example.com' : '';
+      },
+      askSecret: async (question) => {
+        secretQuestions.push(question);
+        return 'secret';
       },
       close: () => {},
       log: () => {},
@@ -57,7 +63,8 @@ describe('setup command', () => {
       },
     });
 
-    expect(questions).toEqual(['Garmin email: ', 'Garmin password: ']);
+    expect(questions).toEqual(['Garmin email: ']);
+    expect(secretQuestions).toEqual(['Garmin password: ']);
   });
 
   it('exits when email or password is missing', async () => {
@@ -66,6 +73,7 @@ describe('setup command', () => {
     await runSetup({
       env: {},
       ask: async () => '',
+      askSecret: async () => '',
       close: () => {},
       log: () => {},
       exit: (code) => {
@@ -75,5 +83,19 @@ describe('setup command', () => {
     });
 
     expect(exitCode).toBe(1);
+  });
+
+  it('hides typed characters while muted and shows them otherwise', async () => {
+    const written: string[] = [];
+    const target = { write: (chunk: string) => written.push(chunk) };
+    const output = createMutableOutput(target);
+
+    output.stream.write('Garmin password: ');
+    output.setMuted(true);
+    output.stream.write('hunter2');
+    output.setMuted(false);
+    output.stream.write('\n');
+
+    expect(written.join('')).toBe('Garmin password: \n');
   });
 });

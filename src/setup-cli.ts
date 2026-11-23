@@ -1,8 +1,10 @@
 import readline from 'node:readline';
+import { Writable } from 'node:stream';
 import { GarminAuth } from './client';
 
 type SetupIo = {
   ask: (question: string) => Promise<string>;
+  askSecret: (question: string) => Promise<string>;
   close: () => void;
   log: (message: string) => void;
   exit: (code: number) => void;
@@ -28,21 +30,60 @@ async function authenticateWithGarmin(
   return auth.displayName;
 }
 
-function createReadlineIo(): Pick<SetupIo, 'ask' | 'close'> {
-  const rl = readline.createInterface({ input: process.stdin, output: process.stderr });
+type OutputTarget = {
+  write: (chunk: string) => unknown;
+};
+
+export function createMutableOutput(target: OutputTarget): {
+  stream: Writable;
+  setMuted: (isMuted: boolean) => void;
+} {
+  let isMuted = false;
+  const stream = new Writable({
+    write(chunk: Buffer | string, _encoding, callback) {
+      if (!isMuted) target.write(chunk.toString());
+      callback();
+    },
+  });
+  return {
+    stream,
+    setMuted: (value) => {
+      isMuted = value;
+    },
+  };
+}
+
+function createReadlineIo(): Pick<SetupIo, 'ask' | 'askSecret' | 'close'> {
+  const output = createMutableOutput(process.stderr);
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: output.stream,
+    terminal: Boolean(process.stdin.isTTY),
+  });
   return {
     ask: (question) =>
       new Promise((resolve) => {
         rl.question(question, (answer) => resolve(answer.trim()));
+      }),
+    askSecret: (question) =>
+      new Promise((resolve) => {
+        output.stream.write(question);
+        output.setMuted(true);
+        rl.question('', (answer) => {
+          output.setMuted(false);
+          output.stream.write('\n');
+          resolve(answer.trim());
+        });
       }),
     close: () => rl.close(),
   };
 }
 
 export async function runSetup(overrides: Partial<SetupIo> = {}): Promise<void> {
-  const needsReadline = !overrides.ask || !overrides.close;
+  const needsReadline = !overrides.ask || !overrides.askSecret || !overrides.close;
   const readlineIo = needsReadline ? createReadlineIo() : null;
   const ask = overrides.ask ?? readlineIo!.ask;
+  const askSecret = overrides.askSecret ?? readlineIo!.askSecret;
   const close = overrides.close ?? readlineIo!.close;
   const log = overrides.log ?? ((message: string) => console.error(message));
   const exit = overrides.exit ?? ((code: number) => process.exit(code));
@@ -54,7 +95,7 @@ export async function runSetup(overrides: Partial<SetupIo> = {}): Promise<void> 
 
   try {
     const email = env.GARMIN_EMAIL ?? (await ask('Garmin email: '));
-    const password = env.GARMIN_PASSWORD ?? (await ask('Garmin password: '));
+    const password = env.GARMIN_PASSWORD ?? (await askSecret('Garmin password: '));
 
     if (!email || !password) {
       log('Error: email and password are required');
