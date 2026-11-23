@@ -1,11 +1,17 @@
-# /bioscan and meal logging: design
+# Jarvis: personal assistant for Claude Code, starting with fitness (`/bioscan`, meal logging)
 
-Status: draft for approval · 2026-11-23
+Status: draft for approval, revision 2 · 2026-11-23
 
 ## 1. Intent
 
-One command, `/bioscan`, gives a full health log in Claude Code. It exists to help with, in priority order:
+**Jarvis** is the user's personal assistant inside Claude Code. It is one named system with:
+- its own MCP server
+- its own commands
+- its own repository
 
+Its commands work in every Claude Code session on the user's Mac. It can be changed ("tweaked") from any new session.
+
+The first module is fitness, which exists to help, in priority order, with:
 1. losing weight
 2. stamina
 3. lower resting heart rate
@@ -13,52 +19,75 @@ One command, `/bioscan`, gives a full health log in Claude Code. It exists to he
 5. running for longer (running time)
 6. speed, which matters least for now
 
-It also learns the user's habits over time. Separately, meals are logged from an Android phone (photo, description, time the meal was finished) and get a calorie estimate. The Mac is closed most of the day, so meals sent from the phone must wait and be imported when the Mac is next opened.
+Planned later, as separate projects: habits and scheduling outside fitness. This version leaves room for them but does not build them.
 
-Builds on what exists on branch `claude/hardening-and-health-check`:
+The fitness module provides:
 
-- the Garmin connector (read-only, `GARMIN_READ_ONLY=true`)
-- the Xiaomi scale connector (loopback HTTP, bearer token)
-- `/health`
-- `health-check/install.sh`
+- **`/bioscan`:** a full health log that learns the user's habits over time.
+- **Meal logging from an Android phone:** photo, description and the time the meal was finished, with a calorie estimate. The Mac is closed most of the day, so meals wait and are imported when the Mac is next opened.
+
+Builds on branch `claude/hardening-and-health-check` of the user's forks:
+- `garmin-connect-mcp`: read-only, `GARMIN_READ_ONLY=true`
+- `xiaomi-scale-mcp`: loopback HTTP, bearer token
+
+It also absorbs the existing `/health` command and installer.
 
 ## 2. Goals
 
-- **`/bioscan` on demand**, typed in Claude Code on the Mac, or from the phone through `claude remote-control` while the Mac is on. Sections are ordered by the user's priorities:
+- **Jarvis everywhere:**
+  - The Jarvis MCP server and all Jarvis commands are installed for the user, so they work in every Claude Code session on the Mac (desktop app Code tab, terminal, or the phone via `claude remote-control`).
+  - A `/jarvis` command lists the commands. When the user asks to change Jarvis from any session, it tells Claude where the code lives, the rules for changing it, and how to test, reinstall and save the change.
+- **`/bioscan` on demand.** Sections are ordered by the user's priorities:
   1. weight
   2. calories eaten vs burned
   3. heart
   4. stamina
   5. sleep
   6. exercise
-  7. speed
-  8. habits noticed
-  9. next steps
+  7. today's meals
+  8. speed
+  9. habits noticed
+  10. next steps
 - **Changes since the last scan**, such as weight since the last `/bioscan`, alongside 7- and 30-day trends.
 - **Exercise detail:** every run, walk and ride recorded on Garmin that day, each with start–end time, duration, distance and average pace (speed for rides), plus per-type totals for the day so far.
-- **Meal inbox:** the phone drops photo + description + finish time into a Google Drive folder. When the Mac syncs, the next `/bioscan` imports every new meal. Claude estimates kcal, protein, carbs and fat, and stores the meal at the time the user gave.
-- **Live meal logging:** while the Mac is on, `/meal` with a photo or description in the session gets an estimate immediately and logs it.
-- **Habit learning:** each scan is saved. Claude looks across scans, meals and Garmin history for patterns and reports only patterns seen repeatedly, with their evidence.
-- **Suggestions:** concrete next steps tied to the goals above, based on the data.
+- **US units everywhere:**
+  - pounds
+  - miles
+  - min/mile pace
+  - mph
+  - Calories (kcal)
+  - grams for macros
 
-## 3. Non-goals
+  Data is stored in metric and converted only for display, so the unit setting can change later.
+- **Meal inbox:** the phone drops photo + description + finish time into a Google Drive folder. When the Mac syncs, the next `/bioscan` imports every new meal. Claude estimates Calories, protein, carbs and fat, and stores the meal at the time the user gave.
+- **Live meal logging:** while the Mac is on, `/meal` with a photo or description gets an estimate immediately and logs it.
+- **Habit learning:** every day is recorded, including days without a scan. Claude reports only patterns seen on at least 3 days, with the evidence.
+- **Suggestions:** concrete next steps tied to the priorities above.
+  - There are no numeric targets for now: no goal weight, no Calorie target.
+  - Suggestions are based on trends: keep a deficit going, more consistent sleep, longer easy runs.
+  - Targets can be added later (`set_goals`).
 
-- Automatic delivery (scheduled reports, push, email). `/bioscan` runs when asked.
-- Writing anything to Garmin Connect or Xiaomi. Garmin stays read-only; meals live in the local journal.
-- Medical advice, or calorie precision beyond a photo estimate (expect ±20–30%).
-- iPhone or Windows support for the meal inbox in this version.
+## 3. Non-goals (this version)
+
+- Habit tracking and scheduling outside fitness. These are later Jarvis modules; only the structure for them is built now.
+- Automatic delivery (scheduled reports, push, email). Commands run when asked.
+- Writing anything to Garmin Connect or Xiaomi. Garmin stays read-only; meals live in the Jarvis journal.
+- Medical advice, or Calorie precision beyond a photo estimate (expect ±20–30%).
+- iPhone or Windows support for the meal inbox.
 
 ## 4. Anti-goals (failure even if it "works")
 
 - Inventing or filling in numbers that the data did not provide.
 - Storing Garmin or Xiaomi passwords anywhere new.
 - Importing the same meal twice, or losing a meal (an inbox file removed before its meal is safely in the journal).
-- A slow, token-heavy scan. Raw Garmin payloads with per-minute arrays must not be pulled into the conversation, and arithmetic (totals, deltas, averages) is not left to the model.
+- A slow, token-heavy scan. Raw Garmin payloads with per-minute arrays must not be pulled into the conversation, and arithmetic is not left to the model.
 - "Habits" that are one-off coincidences presented as patterns.
+- Personal data (journal, meal photos, tokens) ending up in the Jarvis repository.
+- A structure that has to be rewritten to add the habits or scheduling modules.
 
 ## 5. Constraints
 
-- **Where it runs.** Everything runs on the user's Mac (macOS) in Claude Code, using skills and MCP servers registered at user scope by `install.sh`. The cloud session cannot reach Garmin or Xiaomi.
+- **Where it runs.** Everything runs on the user's Mac (macOS) in Claude Code. The cloud session cannot reach Garmin or Xiaomi.
 - **Phone access.** The phone reaches the Mac only through Remote Control, which needs the Mac awake with `claude remote-control` running.
   - Messages sent while the Mac is asleep are not known to queue.
   - Photo attachments are officially supported but have reported delivery bugs.
@@ -66,12 +95,12 @@ Builds on what exists on branch `claude/hardening-and-health-check`:
 - **Phone side:** Android with the Google Drive app.
 - **Mac side:** Google Drive for desktop syncs `My Drive` to `~/Library/CloudStorage/GoogleDrive-<account>/My Drive/`. In streaming mode, files download when read.
 - **Garmin data already available:**
-  - daily summary, with calories burned (`totalKilocalories`, `activeKilocalories`)
+  - daily summary, with Calories burned (`totalKilocalories`, `activeKilocalories`)
   - sleep
   - activities by date (`activitylist-service` search: `activityType.typeKey`, `startTimeLocal`, `duration` s, `distance` m, `averageSpeed` m/s, `calories`)
   - VO2 max
   - training status and training readiness
-- **Garmin repo conventions** (`CLAUDE.md`): no comments, DTO type + zod schema, `register*Tools`, `console.error` only, tests with vitest.
+- **The Garmin and Xiaomi connectors stay in their own forks.** They keep their repo conventions; the Garmin repo's `CLAUDE.md` asks for no comments, DTO type + zod schema, `register*Tools`, `console.error` only, and vitest.
 
 ## 6. Approaches considered
 
@@ -79,80 +108,152 @@ How the phone reaches the Mac:
 
 | Approach | Trade-offs | Decision |
 |---|---|---|
-| A. Claude app → remote-controlled session on the Mac | No new accounts or costs, data stays local. Needs the Mac awake; offline messages not known to queue; photo bugs reported. | **Chosen, with an inbox folder** so meals wait while the Mac is closed. Live chat still works when the Mac is on. |
-| B. Telegram bot on the Mac | Reliable photo delivery, could push reports. Needs an Anthropic API key billed per use, a bot token and much more code; Telegram holds undelivered messages only about 24 h. | Rejected for now; fallback if A proves unreliable. |
+| A. Claude app → remote-controlled session on the Mac | No new accounts or costs, data stays local. Needs the Mac awake; offline messages not known to queue; photo bugs reported. | **Chosen, with an inbox folder** so meals wait while the Mac is closed. |
+| B. Telegram bot on the Mac | Reliable photo delivery, could push reports. Needs a per-use Anthropic API key, a bot token and much more code; Telegram holds undelivered messages only about 24 h. | Rejected for now; fallback if A proves unreliable. |
 | C. Cloud-hosted service | Works with the Mac closed. Garmin and Xiaomi logins would live in the cloud. | Rejected. |
 
 How the Android phone fills the inbox:
 
 | Approach | Trade-offs | Decision |
 |---|---|---|
-| Share sheet → Google Drive, with time and description in the file title | No extra apps; a few taps; title is editable in the "Save to Drive" dialog. | **Chosen.** |
-| Google Form with photo upload | Text answers land in a Google Sheet, which Drive for desktop syncs only as a link file the Mac cannot read. | Rejected. |
-| Automation apps (Tasker, MacroDroid) | One tap, but needs extra and often paid apps plus a separate sync app. | Rejected. |
+| Share sheet → Google Drive, with time and description in the file title | No extra apps; a few taps. | **Chosen.** |
+| Google Form | Answers land in a Google Sheet, which the Mac cannot read as a file. | Rejected. |
+| Automation apps (Tasker, MacroDroid) | Extra and often paid apps plus a separate sync app. | Rejected. |
 
-Inside the Mac (builder's call, recorded here):
+How Jarvis is put together (builder's call, recorded here):
 
 | Approach | Trade-offs | Decision |
 |---|---|---|
-| Small local **journal MCP server** for storage, inbox bookkeeping and arithmetic; Claude does photo estimation, insights and suggestions | A little more code, but file formats and numbers stay consistent and testable. | **Chosen.** |
-| Skills only, with Claude editing journal files directly | Less code, but formats drift and sums are done by the model. | Rejected. |
+| **Own `jarvis` repository** with its own MCP server (modules inside), skills and installer; installs the Garmin and Xiaomi connectors as separate servers | Clean home for future modules; the connectors stay independent and updatable. | **Chosen.** |
+| Grow everything inside the Garmin fork | Mixes non-Garmin and non-fitness features into a Garmin connector. | Rejected. |
+| One Jarvis server that also wraps Garmin and Xiaomi | One server name, but couples a TypeScript server to a Rust one and duplicates their logins. | Rejected. |
+
+Inside the Jarvis server:
+
+| Approach | Trade-offs | Decision |
+|---|---|---|
+| Code does storage, inbox bookkeeping and arithmetic; Claude does photo estimation, insights and suggestions | Consistent, testable numbers and formats. | **Chosen.** |
+| Skills only, with Claude editing files | Formats drift; sums done by the model. | Rejected. |
 
 ## 7. Design
 
-### 7.1 Phone flow (Android)
+### 7.1 Repository and layout
 
-1. Take the photo with the camera as usual.
-2. In the gallery: **Share → Drive**.
+`github.com/HexHub-web/jarvis` is a new private repository. It is cloned to `~/jarvis` on the Mac.
+
+```
+jarvis/
+  CLAUDE.md          how Jarvis is built and changed (read by every Claude session working on it)
+  README.md          what Jarvis does, install, commands
+  install.sh         one-time setup and re-install after changes (absorbs health-check/install.sh)
+  server/            the Jarvis MCP server (TypeScript, stdio)
+    src/modules/fitness/   meals, days, scans, inbox import, unit conversion
+    src/modules/           future: habits/, schedule/
+    src/core/              module registry, storage helpers, settings, units
+  skills/            jarvis/, bioscan/, meal/, health/  → installed to ~/.claude/skills/
+  docs/              designs (this document moves here)
+```
+
+The connectors are cloned next to it by `install.sh`, as today:
+- `~/jarvis/connectors/garmin-connect-mcp`
+- `~/jarvis/connectors/xiaomi-scale-mcp`
+
+`connectors/` is git-ignored.
+
+**Personal data never lives in the repo.**
+
+| Data | Location |
+|---|---|
+| Journal | `~/.jarvis/` (mode 0700) |
+| Garmin token | `~/.garmin-mcp/` |
+| Xiaomi token | macOS keychain |
+| Meal photos | the user's Google Drive |
+
+**Claude Code registration (user scope):**
+
+| Server | What it is |
+|---|---|
+| `jarvis` | the Jarvis server |
+| `garmin` | the Garmin connector, read-only |
+| `xiaomi-scale` | the Xiaomi connector, HTTP |
+
+The existing `/health` setup is migrated by `install.sh`: it removes the old registrations and skill, and keeps the logins.
+
+### 7.2 Modules
+
+Each module registers its own tools under a prefix and owns its files under `~/.jarvis/<module>/`. Adding the habits or scheduling module means adding a folder and registering it; nothing else changes.
+
+- **Now:** `fitness_*`.
+- **Later:** `habits_*`, `schedule_*`.
+
+`core` provides:
+- atomic JSONL append and upsert
+- settings (`~/.jarvis/settings.json`: units `us`, inbox path, priorities, optional targets)
+- unit conversion
+
+### 7.3 `/jarvis` and changing Jarvis from any session
+
+- **`/jarvis` with no arguments** lists Jarvis's commands and where things live.
+- **`/jarvis <change request>`** (or asking to change Jarvis in any session) loads instructions for Claude:
+  1. the code is in `~/jarvis`; read its `CLAUDE.md` first
+  2. make the change on a branch
+  3. run the tests
+  4. run `install.sh --update` to rebuild and reinstall, keeping data and logins
+  5. commit, and push when the user asks
+- **`CLAUDE.md`** documents:
+  - the architecture
+  - how to add a module, a tool or a command
+  - code conventions
+  - test and install commands
+  - the security rules (no personal data in the repo, connectors read-only)
+- **In cloud sessions** (claude.ai/code), the user selects the `jarvis` repository to change code there. The commands themselves only run on the Mac, where the logins are.
+
+### 7.4 Phone flow (Android)
+
+1. Take the photo.
+2. **Share → Drive.**
 3. In "Save to Drive":
-   - **Title:** `13:30 chicken rice, extra sauce`, i.e. the time the meal was finished, then a description.
-   - **Folder:** `Health Inbox`.
-4. Save. That's all; nothing else is needed until the Mac is opened.
+   - **Title:** `1:30pm chicken rice, extra sauce`, i.e. the time the meal was finished, then a description.
+   - **Folder:** `Jarvis Inbox`.
+4. Save.
 
 Title rules:
-- **Time format:** `HH:MM` 24 h; `1:30pm` is also accepted.
-- **Date:** today. A time later than the upload time is treated as the previous day. `yesterday 21:00 pizza` is also understood.
+- **Time format:** `1:30pm` and `13:30` both work.
+- **Date:** today. A time later than the upload time means the previous day. `yesterday 9pm pizza` is also understood.
 - **No time in the title:** use the photo's capture time (EXIF), then the file's modified time. The meal is marked "time estimated".
 
-A meal without a photo (description only) is shared as text from a notes app into the same folder. If Drive does not save shared text as a file, the fallback is any photo plus the description in the title. This is verified during setup.
+A description-only meal is shared as text from a notes app into the same folder. If Drive does not save shared text as a file, the fallback is any photo plus the description in the title. This is verified during setup.
 
-### 7.2 Journal
-
-Data lives in `~/health-check/data/` (mode 0700), separate from the code.
+### 7.5 Fitness journal (`~/.jarvis/fitness/`)
 
 | File | Contents |
 |---|---|
-| `meals.jsonl` | One meal per line: `id`, `eaten_at` (local ISO time), `time_estimated`, `description`, `items[]` (each with `name`, `portion`, `kcal`, `protein_g`, `carbs_g`, `fat_g`), totals, `confidence` (`low`/`medium`/`high`), `source` (`inbox`/`chat`), `source_file`, `photo_sha256`, `logged_at`, `corrections[]`. |
-| `days.jsonl` | One row per date, upserted: weight and body fat (if weighed), kcal eaten (from meals), kcal burned and active, resting HR, sleep minutes and score, steps, average stress, per-type minutes/km for runs, walks and rides, and the longest run. Each `/bioscan` fills today and backfills every day since the last scan (up to 30), so trends and habits have no gaps on days without a scan. |
-| `scans.jsonl` | One line per `/bioscan`: `scanned_at`, plus the weight and day totals shown at the time, for the "since last scan" changes. |
-| `habits.md` | Patterns Claude has seen repeatedly. Each entry has: statement, first seen, last seen, evidence count, examples. Rewritten by Claude after each scan; entries not supported for 30 days are removed. |
-| `goals.json` | The priority order above, goal weight (from the scale's target if set, otherwise asked once), and daily calorie deficit target (default 500 kcal; see §10). |
+| `meals.jsonl` | One meal per line: `id`, `eaten_at`, `time_estimated`, `description`, `items[]` (each with `name`, `portion`, `kcal`, `protein_g`, `carbs_g`, `fat_g`), totals, `confidence`, `source` (`inbox`/`chat`), `source_file`, `photo_sha256`, `logged_at`, `corrections[]`. |
+| `days.jsonl` | One row per date, upserted: weight and body fat (if weighed), kcal eaten (from meals), kcal burned and active, resting HR, sleep minutes and score, steps, average stress, per-type minutes and distance for runs, walks and rides, and the longest run. Each `/bioscan` fills today and backfills every day since the last scan (up to 30). |
+| `scans.jsonl` | One line per `/bioscan`: `scanned_at`, plus the weight and day totals shown, for the "since last scan" changes. |
+| `habits.md` | Patterns seen on at least 3 days, each with statement, first and last seen, evidence count and examples. Entries unsupported for 30 days are removed. |
 
-Imported inbox files move to `Health Inbox/Imported/YYYY-MM-DD/` only after their meal is written. Files are never deleted. Re-import is prevented by `photo_sha256`, plus source file name for text items.
+Imported inbox files move to `Jarvis Inbox/Imported/YYYY-MM-DD/` only after their meal is written. Files are never deleted. Re-import is prevented by `photo_sha256`, plus source file name for text items.
 
-### 7.3 Journal MCP server
-
-`health-check/journal/` is its own small TypeScript package, stdio transport, same stack as the Garmin connector. All tools are local file operations.
+### 7.6 Jarvis server: fitness tools
 
 | Tool | Purpose |
 |---|---|
-| `list_inbox` | New items with their absolute file path, parsed time (and whether estimated), description and whether there is a photo. Unparseable items are listed with the reason. |
-| `save_meal` | Validates the meal, appends it, then moves the inbox file. Idempotent. |
-| `update_meal` | Applies a correction ("half portion", "no sauce"), keeping the original in `corrections[]`. |
-| `get_meals` | Meals for a date, plus computed totals (kcal, protein, carbs, fat). |
-| `get_last_scan` / `save_scan` | Read the previous scan; append a new one. |
-| `save_days` | Upsert per-date rows (from the Garmin and Xiaomi tools); kcal eaten is filled in from the meals. |
-| `get_history` | Daily rows for the last N days (default 30), with computed values: 7-day average deficit, resting HR trend, average sleep, weight change over 7 and 30 days, longest run and average run pace per week. |
-| `get_goals` / `set_goals` | Read and change the targets. |
-| `read_habits` / `write_habits` | The habits notes. |
+| `fitness_list_inbox` | New items with their absolute path, parsed time (and whether estimated), description and whether there is a photo; unparseable items with the reason. |
+| `fitness_save_meal` | Validates the meal, appends it, then moves the inbox file. Idempotent. |
+| `fitness_update_meal` | Applies a correction, keeping the original in `corrections[]`. |
+| `fitness_get_meals` | Meals for a date with computed totals. |
+| `fitness_save_days` | Upsert per-date rows from the Garmin and Xiaomi tools; kcal eaten filled in from the meals. |
+| `fitness_get_last_scan` / `fitness_save_scan` | Read the previous scan; append a new one. |
+| `fitness_get_history` | Daily rows for N days (default 30) with computed values: 7-day average deficit, resting HR trend, average sleep, weight change over 7 and 30 days, longest run and average run pace per week. Display values are already in US units. |
+| `fitness_read_habits` / `fitness_write_habits` | The habits notes. |
+| `jarvis_get_settings` / `jarvis_set_settings` | Shared settings: units, inbox path, priorities, optional targets. |
 
-All totals, deltas and averages are computed in code.
+### 7.7 Garmin connector additions (in the Garmin fork)
 
-### 7.4 Garmin connector addition
+Two new read-only tools that return compact data instead of full records with per-minute arrays. Both take `startDate` and an optional `endDate`.
 
-Two new read-only tools that return compact data instead of raw Garmin records (the existing tools return full records, including per-minute arrays). Both take `startDate` and an optional `endDate`, so one call covers today or every day since the last scan.
-
-`get_day_summaries(startDate, endDate)` returns one row per day, computed server-side from the daily summary and sleep:
+`get_day_summaries` returns one row per day, computed from the daily summary and sleep:
 
 - kcal burned and active
 - resting HR and its 7-day average
@@ -163,114 +264,119 @@ Two new read-only tools that return compact data instead of raw Garmin records (
 
 Field names are confirmed against the live account; missing fields come back as null.
 
-`get_activity_log(startDate, endDate)` returns compact lines:
+`get_activity_log` returns one line per activity, in metric. Jarvis converts to US units.
 
 - **Grouping:**
   - Runs: `running`, `treadmill_running`, `trail_running`, `track_running`
   - Rides: `cycling`, `road_biking`, `mountain_biking`, `indoor_cycling`, `gravel_cycling`
   - Walks: `walking`, `hiking`
   - Anything else: "other", by name
-- **Fields per activity:** start and end (local time), duration, distance in km, average pace in min/km (runs and walks) or speed in km/h (rides), and calories.
-- **Totals:** per-group totals for the day.
-- **Wiring:** reuses `getActivitiesByDate`, follows the repo conventions, unit-tested with fixture data. It is not one of the write tools, so read-only mode keeps it.
+- **Fields per activity:** start and end (local time), duration, distance, average speed and calories.
+- **Totals:** per-group totals per day.
 
-Performance data (VO2 max, training readiness, training status) comes from the existing tools if their payloads are small. If not, a compact `get_performance_snapshot` is added the same way. This is the builder's call after checking payload sizes against the live account.
+Performance data (VO2 max, training readiness, training status) comes from the existing tools if their payloads are small. If not, a compact `get_performance_snapshot` is added the same way.
 
-### 7.5 `/bioscan` skill
+### 7.8 `/bioscan`
 
 Steps:
 
-1. **Import meals:** `list_inbox`. For each item, read the photo, estimate items and macros from the photo plus description, then `save_meal`. Low-confidence estimates are marked "rough".
+1. **Import meals:** `fitness_list_inbox`. For each item, read the photo, estimate items and macros from the photo plus description, then `fitness_save_meal`. Low-confidence estimates are marked "rough".
 2. **Fetch:**
-   - Garmin: `get_day_summaries` and `get_activity_log` from the day after the last scan through today (today only on the first scan), plus performance
+   - Garmin: `get_day_summaries` and `get_activity_log` from the day after the last scan through today, plus performance
    - Xiaomi: latest weigh-in and history
-   - Journal: last scan, today's meals, 30-day history, habits, goals
+   - Jarvis: last scan, today's meals, 30-day history, habits, settings
 3. **Show** the layout below. Leave out lines with no data; never estimate missing values.
-4. **Save:** `save_days` for every fetched day, then `save_scan`.
-5. **Update `habits.md`:** add or strengthen a pattern only with at least 3 supporting days; drop stale ones.
+4. **Save:** `fitness_save_days` for every fetched day, then `fitness_save_scan`.
+5. **Update habits:** add or strengthen a pattern only with at least 3 supporting days.
 
 ```
-Bioscan · Tue 24 Nov   (last scan: Fri 20 Nov, 4 days ago)
+Jarvis · Bioscan · Tue Nov 24   (last scan: Fri Nov 20, 4 days ago)
 
-Weight     84.2 kg · −0.6 since last scan · −2.1 in 30 days · goal 78
-Calories   eaten 1,850 · burned 2,620 · deficit 770 (7-day avg 540, target 500)
+Weight     185.6 lb · −1.3 since last scan · −4.6 in 30 days
+Calories   eaten 1,850 · burned 2,620 · deficit 770 (7-day avg 540)
 Heart      resting 61 bpm (7-day avg 62 · a month ago 64)
 Stamina    VO2 max 44 · longest run this week 38 min (last week 31)
 Sleep      6h 40m, score 72 · week avg 6h 55m
 
 Exercise today
-  07:12–07:44  Run    32 min · 5.1 km · 6:16/km
-  12:30–13:05  Walk   35 min · 2.9 km · 12:04/km
-  18:02–19:07  Ride   1h 05 · 24.8 km · 22.9 km/h
-  Totals: run 32 min / 5.1 km · walk 35 min / 2.9 km · ride 1h 05 / 24.8 km
+  7:12–7:44 am   Run    32 min · 3.17 mi · 10:06 /mi
+  12:30–1:05 pm  Walk   35 min · 1.80 mi · 19:26 /mi
+  6:02–7:07 pm   Ride   1h 05 · 15.4 mi · 14.2 mph
+  Totals: run 32 min / 3.17 mi · walk 35 min / 1.80 mi · ride 1h 05 / 15.4 mi
 
 Meals today (3 imported from your phone)
-  08:10  Oats with banana            420 kcal
-  13:30  Chicken rice, extra sauce   780 kcal  (rough)
-  19:45  Salmon, potatoes, salad     650 kcal
+  8:10 am   Oats with banana            420 Cal
+  1:30 pm   Chicken rice, extra sauce   780 Cal  (rough)
+  7:45 pm   Salmon, potatoes, salad     650 Cal
   Protein 92 g · carbs 210 g · fat 61 g
 
-Speed      avg run pace this week 6:20/km (last week 6:31)
+Speed      avg run pace this week 10:12 /mi (last week 10:30)
 
 Habits I've noticed
-  - You eat about 400 kcal more on days after under 6 h of sleep (5 of the last 7 times).
+  - You eat about 400 Cal more on days after under 6 h of sleep (5 of the last 7 times).
   - Runs happen Tue/Thu/Sat; Mondays are usually inactive (4 of the last 4 weeks).
 
 Next steps
   - Add an easy 25–30 min run on Monday at conversational pace.
-  - Keep tomorrow's deficit near 500 kcal; aim for 110 g protein.
+  - Your 7-day deficit is steady; protein was low today (92 g).
 ```
 
 All numbers above are illustrative.
 
-### 7.6 `/meal` skill (live, Mac on)
+### 7.9 `/meal` and `/health`
 
-- **Logging:** with a photo and/or description in the message, estimate the meal, show the items with kcal and macros, then `save_meal` with `source: chat`. The meal time is the time given in the message, otherwise now.
-- **Corrections:** `/meal fix <what>` corrects the most recent meal, or a named one, via `update_meal`.
+- **`/meal`** (Mac on): with a photo and/or description, estimate the meal, show the items with Calories and macros, then `fitness_save_meal` with `source: chat`. The meal time is the time given in the message, otherwise now. `/meal fix <what>` corrects a meal.
+- **`/health`** stays as the quick check, now in US units, and moves into the Jarvis repo.
 
-### 7.7 `/health`
+### 7.10 `install.sh`
 
-Stays as the quick check.
-
-### 7.8 Installer
-
-`install.sh` gains these steps:
-
-- build `health-check/journal`
-- create `~/health-check/data`
-- find the Drive folder: detect `~/Library/CloudStorage/GoogleDrive-*/My Drive`, offer to create `Health Inbox` there, or ask for a path; store it in `goals.json`/config
-- register `journal` with Claude Code
-- install `/bioscan` and `/meal` with tool allowlists, including read access to the inbox folder for photos
-- print the Android steps
-
-Re-runs keep the data.
+- **First install** clones the connectors and builds all three servers.
+- **Folders:**
+  - creates `~/.jarvis`
+  - finds the Drive folder: detects `~/Library/CloudStorage/GoogleDrive-*/My Drive`, offers to create `Jarvis Inbox`, or asks for a path
+- **Sign-ins:** Garmin and Xiaomi, unless already signed in.
+- **Claude Code:**
+  - registers the three servers
+  - installs `/jarvis`, `/bioscan`, `/meal` and `/health`, with tool allowlists that include read access to the inbox folder for photos
+- **Background service:** the Xiaomi connector's LaunchAgent.
+- **Finish:** prints the Android steps.
+- **Migration:** removes the old `/health` install from the Garmin fork's `health-check/`.
+- **`--update`** rebuilds and reinstalls, keeping data, settings and logins. It is what `/jarvis` runs after a change.
+- **`--uninstall`** removes registrations and skills, and leaves data unless asked.
 
 ## 8. Failure handling
 
 | Situation | Behaviour |
 |---|---|
 | Inbox item that can't be read or parsed | Left in the inbox and listed with the reason. |
-| Drive folder missing or not synced | Say so, with the folder path, and carry on with the rest. |
-| Garmin or Xiaomi unavailable | Show the remaining sections, with the same one-line fixes as `/health`. |
+| Drive folder missing or not synced | Say so, with the path, and carry on. |
+| Garmin or Xiaomi unavailable | Show the remaining sections, with one-line fixes. |
 | No previous scan | "First scan"; changes start next time. |
 
 ## 9. Left to the builder
 
 - Exact JSON field names and validation.
-- The final activity-type grouping list.
+- The final activity-type grouping.
 - Whether a performance snapshot tool is needed.
 - How skills reference the inbox path.
 - Test fixtures.
 - The wording of habit statements.
+- The exact `CLAUDE.md` content.
 
-## 10. Decisions for the user (asked with this document)
+## 10. Decided by the user
 
-1. **Units:** kg / km / min per km, or lb / miles / min per mile?
-2. **Daily calorie deficit target:** default 500 kcal/day (about 0.5 kg or 1 lb a week). Keep it, or set your own, and set a goal weight if the scale doesn't have one.
+- US units everywhere.
+- No numeric goals or targets for now.
+- The system is named Jarvis, usable and changeable from every new Claude Code session.
+- Habits and scheduling outside fitness come later as Jarvis modules.
 
-## 11. To verify on the user's devices
+## 11. Needed from the user before building
 
-- Android "Save to Drive" lets the title be edited and keeps the photo's capture time; whether shared text saves as a file.
+- Create the private repository `HexHub-web/jarvis` (empty: no README, license or .gitignore). This session cannot create repositories.
+
+## 12. To verify on the user's devices
+
+- Android "Save to Drive" title editing, capture time kept, and shared text saved as a file.
 - Google Drive for desktop path and streaming behaviour.
 - Xiaomi S200 detected by the connector (still unverified).
 - Photo attachments through Remote Control (live `/meal` from the phone).
