@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { dateString } from '../constants';
+import { dateString, garminId } from '../constants';
 
 export type GetRacePredictionsDto = {
   startDate?: string;
@@ -64,7 +64,7 @@ export type GetTrainingPlanDto = {
 };
 
 export const getTrainingPlanSchema = z.object({
-  planId: z.string().describe('The training plan ID'),
+  planId: garminId.describe('The training plan ID'),
 });
 
 export type GetScheduledWorkoutDto = {
@@ -72,5 +72,5 @@ export type GetScheduledWorkoutDto = {
 };
 
 export const getScheduledWorkoutSchema = z.object({
-  workoutId: z.string().describe('The scheduled workout ID'),
+  workoutId: garminId.describe('The scheduled workout ID'),
 });

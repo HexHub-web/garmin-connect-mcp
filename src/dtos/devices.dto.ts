@@ -1,12 +1,12 @@
 import { z } from 'zod';
-import { dateString } from '../constants';
+import { dateString, garminId } from '../constants';
 
 export type GetDeviceSettingsDto = {
   deviceId: string;
 };
 
 export const getDeviceSettingsSchema = z.object({
-  deviceId: z.string().describe('The Garmin device ID'),
+  deviceId: garminId.describe('The Garmin device ID'),
 });
 
 export type GetDeviceSolarDto = {
@@ -16,7 +16,7 @@ export type GetDeviceSolarDto = {
 };
 
 export const getDeviceSolarSchema = z.object({
-  deviceId: z.string().describe('The Garmin device ID'),
+  deviceId: garminId.describe('The Garmin device ID'),
   startDate: dateString.describe('Start date in YYYY-MM-DD format'),
   endDate: dateString.describe('End date in YYYY-MM-DD format'),
 });
@@ -34,7 +34,7 @@ export type GetWorkoutDto = {
 };
 
 export const getWorkoutSchema = z.object({
-  workoutId: z.string().describe('The workout ID'),
+  workoutId: garminId.describe('The workout ID'),
 });
 
 export type GetGearActivitiesDto = {
