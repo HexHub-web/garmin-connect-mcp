@@ -183,12 +183,34 @@ read_port() {
   sed -n 's/^bind_address = ".*:\([0-9][0-9]*\)"$/\1/p' "$CONFIG_FILE"
 }
 
+systemd_user_available() {
+  command -v systemctl >/dev/null 2>&1 && systemctl --user show-environment >/dev/null 2>&1
+}
+
+manual_start_command() {
+  printf 'cd "%s" && MCP_CONFIG_PATH="%s" "%s"' "$RUN_DIR" "$CONFIG_FILE" "$XIAOMI_BIN"
+}
+
 start_xiaomi_hint() {
+  if [ "$NO_SERVICE" -eq 1 ] && ! service_installed; then
+    manual_start_command
+    return
+  fi
   # shellcheck disable=SC2016 # printed literally for the user to copy
   case "$OS" in
     Darwin) printf 'launchctl kickstart -k gui/$(id -u)/%s' "$SERVICE_LABEL" ;;
-    *) printf 'systemctl --user restart %s' "$SYSTEMD_UNIT_NAME" ;;
+    *)
+      if systemd_user_available; then
+        printf 'systemctl --user restart %s' "$SYSTEMD_UNIT_NAME"
+      else
+        manual_start_command
+      fi
+      ;;
   esac
+}
+
+escape_sed_replacement() {
+  printf '%s' "$1" | sed -e 's/[\\|&]/\\&/g'
 }
 
 service_installed() {
@@ -265,9 +287,10 @@ register_mcp() {
 install_skill() {
   step "Installing the /health command"
   mkdir -p "$SKILL_DIR"
-  local start_hint
-  start_hint="$(start_xiaomi_hint)"
-  sed -e "s|{{INSTALLER}}|$SCRIPT_DIR/install.sh|g" \
+  local installer start_hint
+  installer="$(escape_sed_replacement "$SCRIPT_DIR/install.sh")"
+  start_hint="$(escape_sed_replacement "$(start_xiaomi_hint)")"
+  sed -e "s|{{INSTALLER}}|$installer|g" \
       -e "s|{{START_XIAOMI}}|$start_hint|g" \
       "$SCRIPT_DIR/SKILL.md" > "$SKILL_DIR/SKILL.md"
   say "Installed: $SKILL_DIR/SKILL.md"
@@ -298,9 +321,9 @@ install_service() {
 EOF
       ;;
     *)
-      if ! command -v systemctl >/dev/null 2>&1 || ! systemctl --user show-environment >/dev/null 2>&1; then
-        say "systemd user services are not available here. Start the connector yourself with:"
-        say "  cd \"$RUN_DIR\" && MCP_CONFIG_PATH=\"$CONFIG_FILE\" \"$XIAOMI_BIN\" </dev/null &"
+      if ! systemd_user_available; then
+        say "systemd user services are not available here. Start the connector in a terminal you leave open:"
+        say "  $(manual_start_command)"
         return
       fi
       mkdir -p "$(dirname "$SYSTEMD_UNIT")"
@@ -384,8 +407,8 @@ main() {
     install_service
   else
     say ""
-    say "Start the Xiaomi connector whenever you want to use /health:"
-    say "  cd \"$RUN_DIR\" && MCP_CONFIG_PATH=\"$CONFIG_FILE\" \"$XIAOMI_BIN\""
+    say "Start the Xiaomi connector in a terminal you leave open whenever you want to use /health:"
+    say "  $(manual_start_command)"
   fi
 
   step "Done"
